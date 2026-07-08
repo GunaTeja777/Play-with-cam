@@ -40,7 +40,10 @@ const uniforms = {
   // Polygon uniforms
   uPolygon: { value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()] },
   uNumPolygonPoints: { value: 0 },
-  uPolygonActive: { value: 0 }
+  uPolygonActive: { value: 0 },
+
+  // Effect selector: 0.0 = X-Ray, 1.0 = Edge Sketch
+  uEffectType: { value: 0 }
 };
 
 const vertexShader = /* glsl */ `
@@ -69,6 +72,9 @@ const fragmentShader = /* glsl */ `
   uniform vec2 uPolygon[4];
   uniform float uNumPolygonPoints;
   uniform float uPolygonActive;
+
+  // Effect selector
+  uniform float uEffectType;
 
   // Map screen UV -> video UV so the feed is cropped like CSS "cover"
   vec2 coverUV(vec2 uv) {
@@ -148,7 +154,39 @@ const fragmentShader = /* glsl */ `
       }
     }
 
-    vec3 finalColor = mix(dim, xrayColor, mask);
+    vec3 finalColor = dim;
+
+    if (mask > 0.5) {
+      if (uEffectType > 0.5) {
+        // Sobel edge-detection sketch filter (Image 2 style)
+        vec2 stepSize = 1.0 / uVideoResolution;
+        
+        float t00 = luminance(texture2D(uVideo, uv + vec2(-1.0, -1.0) * stepSize).rgb);
+        float t10 = luminance(texture2D(uVideo, uv + vec2( 0.0, -1.0) * stepSize).rgb);
+        float t20 = luminance(texture2D(uVideo, uv + vec2( 1.0, -1.0) * stepSize).rgb);
+        
+        float t01 = luminance(texture2D(uVideo, uv + vec2(-1.0,  0.0) * stepSize).rgb);
+        float t21 = luminance(texture2D(uVideo, uv + vec2( 1.0,  0.0) * stepSize).rgb);
+        
+        float t02 = luminance(texture2D(uVideo, uv + vec2(-1.0,  1.0) * stepSize).rgb);
+        float t12 = luminance(texture2D(uVideo, uv + vec2( 0.0,  1.0) * stepSize).rgb);
+        float t22 = luminance(texture2D(uVideo, uv + vec2( 1.0,  1.0) * stepSize).rgb);
+        
+        float gx = -1.0 * t00 - 2.0 * t01 - 1.0 * t02 + 1.0 * t20 + 2.0 * t21 + 1.0 * t22;
+        float gy = -1.0 * t00 - 2.0 * t10 - 1.0 * t20 + 1.0 * t02 + 2.0 * t12 + 1.0 * t22;
+        
+        float edge = sqrt(gx * gx + gy * gy);
+        edge = smoothstep(0.06, 0.18, edge);
+        
+        vec3 bg = vec3(0.03, 0.12, 0.42); // deep blue background
+        vec3 glowCyan = vec3(0.1, 0.9, 1.0); // glowing cyan
+        
+        finalColor = mix(bg, glowCyan, edge);
+      } else {
+        // Standard X-ray effect (Image 1 style)
+        finalColor = xrayColor;
+      }
+    }
 
     gl_FragColor = vec4(finalColor, 1.0);
   }
@@ -620,11 +658,37 @@ function animate() {
     polyPoints[k].set((activePoints[k][0] + 1) / 2, (activePoints[k][1] + 1) / 2);
   }
 
+  // Detect pinch gesture (index tip and thumb tip touching on either hand)
+  let isPinched = false;
+  for (let i = 0; i < 2; i++) {
+    if (smoothedHands[i]) {
+      const thumbTip = smoothedHands[i][4];
+      const indexTip = smoothedHands[i][8];
+      if (thumbTip && indexTip) {
+        const dx = thumbTip[0] - indexTip[0];
+        const dy = thumbTip[1] - indexTip[1];
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 0.15) {
+          isPinched = true;
+          break;
+        }
+      }
+    }
+  }
+
   // Set uniforms on fragment shader plane material
   uniforms.uPolygonActive.value = polygonActive;
   uniforms.uNumPolygonPoints.value = activePoints.length;
+  uniforms.uEffectType.value = isPinched ? 1.0 : 0.0;
   for (let k = 0; k < 4; k++) {
     uniforms.uPolygon.value[k].copy(polyPoints[k]);
+  }
+
+  // Toggle visibility of face points cloud (hide in sketch mode)
+  if (smoothedFace && !isPinched) {
+    facePointsObj.visible = true;
+  } else {
+    facePointsObj.visible = false;
   }
 
   // Set uniforms on all masked line/point materials
