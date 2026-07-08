@@ -139,46 +139,16 @@ const fragmentShader = /* glsl */ `
       xrayColor += grid * vec3(0.0, 0.5, 0.8) * 0.22;
     }
 
-    // Distance-based reveal mask around each tracked hand + face (in aspect-corrected space)
+    // Distance-based reveal mask inside the polygon scanning area
     float mask = 0.0;
     
     if (uPolygonActive > 0.5) {
       if (isInsidePolygon(vUv)) {
         mask = 1.0;
       }
-    } else {
-      vec2 aspectFix = vec2(uResolution.x / uResolution.y, 1.0);
-      for (int i = 0; i < 2; i++) {
-        if (uHandActive[i] > 0.5) {
-          vec2 d = (uv - uHandCenters[i]) * aspectFix;
-          float dist = length(d);
-          float edge = smoothstep(uRadius, uRadius * 0.35, dist);
-          mask = max(mask, edge);
-        }
-      }
-      if (uFaceActive > 0.5) {
-        vec2 d = (uv - uFaceCenter) * aspectFix;
-        float dist = length(d);
-        float edge = smoothstep(uRadius * 1.35, uRadius * 0.5, dist);
-        mask = max(mask, edge);
-      }
     }
 
     vec3 finalColor = mix(dim, xrayColor, mask);
-
-    // subtle scan ring at the mask boundary
-    float ring = 0.0;
-    if (uPolygonActive <= 0.5) {
-      vec2 aspectFix = vec2(uResolution.x / uResolution.y, 1.0);
-      for (int i = 0; i < 2; i++) {
-        if (uHandActive[i] > 0.5) {
-          vec2 d = (uv - uHandCenters[i]) * aspectFix;
-          float dist = length(d);
-          ring += smoothstep(uRadius + 0.006, uRadius, dist) * (1.0 - smoothstep(uRadius - 0.01, uRadius - 0.016, dist));
-        }
-      }
-    }
-    finalColor += ring * vec3(0.6, 1.0, 1.0) * 0.9;
 
     gl_FragColor = vec4(finalColor, 1.0);
   }
@@ -281,16 +251,7 @@ function makeLineSet(maxLines, color, opacity) {
   return lines;
 }
 
-// glow: a wider, dimmer line underneath a thin, bright line
-const handGlows = [
-  makeLineSet(200, 0x8fe9ff, 0.18),
-  makeLineSet(200, 0x8fe9ff, 0.18)
-];
-const handCores = [
-  makeLineSet(200, 0xdffbff, 0.9),
-  makeLineSet(200, 0xdffbff, 0.9)
-];
-const faceLines = makeLineSet(1200, 0x8fe9ff, 0.35);
+// (Hand skeleton lines and face contour lines removed)
 
 /* ---------------------------------------------------------------------
    Additional scan overlays (digital face points, polygon boundaries, handles)
@@ -722,34 +683,19 @@ function animate() {
     uniforms.uFaceActive.value = 0;
   }
 
-  // Update skeleton overlays for both hands
-  for (let i = 0; i < 2; i++) {
-    if (smoothedHands[i]) {
-      updateLineSet(handGlows[i], smoothedHands[i], HAND_CONNECTIONS, HAND_CONNECTIONS.length);
-      updateLineSet(handCores[i], smoothedHands[i], HAND_CONNECTIONS, HAND_CONNECTIONS.length);
-    } else {
-      handGlows[i].geometry.setDrawRange(0, 0);
-      handCores[i].geometry.setDrawRange(0, 0);
-    }
-  }
-
-  // Update face contour skeleton and point cloud
+  // Update face digital point cloud positions inside polygon
   if (smoothedFace) {
-    updateLineSet(faceLines, smoothedFace, FACE_CONNECTIONS, FACE_CONNECTIONS.length);
-
-    // Update face digital point cloud positions
     const pAttr = facePointsGeo.attributes.position;
     const arr = pAttr.array;
     let idx = 0;
     for (let j = 0; j < smoothedFace.length; j++) {
       arr[idx++] = smoothedFace[j][0];
       arr[idx++] = smoothedFace[j][1];
-      arr[idx++] = 0.015; // slightly in front of lines
+      arr[idx++] = 0.015;
     }
     facePointsGeo.setDrawRange(0, smoothedFace.length);
     pAttr.needsUpdate = true;
   } else {
-    faceLines.geometry.setDrawRange(0, 0);
     facePointsGeo.setDrawRange(0, 0);
   }
 
