@@ -533,6 +533,47 @@ function processVideoFrame() {
   requestAnimationFrame(processVideoFrame);
 }
 
+let heroesDatabase = null;
+async function loadHeroesDatabase() {
+  try {
+    const res = await fetch('heroes.json');
+    heroesDatabase = await res.json();
+  } catch (err) {
+    console.error('Failed to load heroes API database, using local fallback:', err);
+    heroesDatabase = {
+      "surprised": {
+        "hero": "BAAHUBALI (Prabhas)",
+        "movie": "Baahubali: The Beginning (Tollywood)",
+        "status": "STATUS: BAAHUBALI DETECTED - SURPRISED",
+        "themeColor": "#39ff14",
+        "shadowColor": "rgba(57, 255, 20, 0.4)"
+      },
+      "happy": {
+        "hero": "CHULBUL PANDEY (Salman Khan)",
+        "movie": "Dabangg (Bollywood)",
+        "status": "STATUS: PANDEY DETECTED - HAPPY",
+        "themeColor": "#ff0cc5",
+        "shadowColor": "rgba(255, 12, 197, 0.4)"
+      },
+      "angry": {
+        "hero": "PUSHPA RAJ (Allu Arjun)",
+        "movie": "Pushpa: The Rise (Tollywood)",
+        "status": "STATUS: PUSHPA DETECTED - ANGRY",
+        "themeColor": "#ff2200",
+        "shadowColor": "rgba(255, 34, 0, 0.4)"
+      },
+      "neutral": {
+        "hero": "CHITTI 2.0 (Rajinikanth)",
+        "movie": "Enthiran / Robot (Kollywood)",
+        "status": "STATUS: CHITTI ACTIVE - NEUTRAL",
+        "themeColor": "#00fff2",
+        "shadowColor": "rgba(0, 255, 242, 0.4)"
+      }
+    };
+  }
+}
+loadHeroesDatabase();
+
 async function startCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -710,9 +751,9 @@ function animate() {
     facePointsObj.visible = false;
   }
 
-  // Real-time Face Expression Recognition & HUD Tag update
+  // Real-time Face Expression Recognition & HUD Tag update (Bollywood, Tollywood, Kollywood)
   const faceTagEl = document.getElementById('face-tag');
-  if (smoothedFace && polygonActive > 0.5) {
+  if (smoothedFace && polygonActive > 0.5 && heroesDatabase) {
     const eyeLeft = smoothedFace[33];
     const eyeRight = smoothedFace[263];
     const lipLeft = smoothedFace[61];
@@ -724,7 +765,6 @@ function animate() {
 
     if (eyeLeft && eyeRight && lipLeft && lipRight && lipTop && lipBottom && eyebrowLeft && eyebrowRight) {
       const eyeDist = distNDC(eyeLeft, eyeRight);
-      const mouthWidth = distNDC(lipLeft, lipRight);
       const mouthHeight = distNDC(lipTop, lipBottom);
       const mouthOpenRatio = mouthHeight / eyeDist;
 
@@ -737,49 +777,28 @@ function animate() {
       const eyebrowDist = distNDC(eyebrowLeft, eyebrowRight);
       const eyebrowRatio = eyebrowDist / eyeDist;
 
-      let hero = "IRON MAN";
-      let movie = "Avengers: Endgame";
-      let status = "STATUS: COGNITIVE ANALYSIS - NEUTRAL";
-      let themeColor = "#00fff2"; // neon cyan
-      let shadowColor = "rgba(0, 255, 242, 0.4)";
-
+      let exprKey = "neutral";
       if (mouthOpenRatio > 0.18) {
-        hero = "NEO";
-        movie = "The Matrix";
-        status = "STATUS: THREAT LEVEL HIGH - SURPRISED";
-        themeColor = "#39ff14"; // neon green
-        shadowColor = "rgba(57, 255, 20, 0.4)";
+        exprKey = "surprised";
       } else if (smileRatio > 0.05) {
-        hero = "SPIDER-MAN";
-        movie = "Spider-Man: No Way Home";
-        status = "STATUS: ALLY DETECTED - HAPPY";
-        themeColor = "#ff0cc5"; // neon pink
-        shadowColor = "rgba(255, 12, 197, 0.4)";
+        exprKey = "happy";
       } else if (smileRatio < -0.06 || eyebrowRatio < 0.18) {
-        hero = "BATMAN";
-        movie = "The Dark Knight";
-        status = "STATUS: VIGILANTE DETECTED - ANGRY";
-        themeColor = "#ff2200"; // neon red
-        shadowColor = "rgba(255, 34, 0, 0.4)";
+        exprKey = "angry";
       }
 
+      // Read profile from loaded heroes database
+      const profile = heroesDatabase[exprKey];
+
       // Update HTML text elements
-      document.getElementById('tag-hero').textContent = hero;
-      document.getElementById('tag-movie').textContent = movie;
-      document.getElementById('tag-status').textContent = status;
+      document.getElementById('tag-hero').textContent = profile.hero;
+      document.getElementById('tag-movie').textContent = profile.movie;
+      document.getElementById('tag-status').textContent = profile.status;
 
       // Dynamic colors and shadows
-      faceTagEl.style.borderColor = themeColor;
-      faceTagEl.style.boxShadow = `0 0 15px ${shadowColor}`;
-      faceTagEl.style.color = themeColor;
+      faceTagEl.style.borderColor = profile.themeColor;
+      faceTagEl.style.boxShadow = `0 0 15px ${profile.shadowColor}`;
+      faceTagEl.style.color = profile.themeColor;
 
-      // Map face center NDC to screen pixels
-      const c = centroid(smoothedFace, [10, 152, 234, 454]);
-      const x = (c[0] + 1) / 2 * window.innerWidth;
-      const y = (1.0 - c[1]) / 2 * window.innerHeight;
-
-      faceTagEl.style.left = `${x}px`;
-      faceTagEl.style.top = `${y - 120}px`;
       faceTagEl.classList.remove('hidden');
     } else {
       faceTagEl.classList.add('hidden');

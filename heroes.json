@@ -1,0 +1,30 @@
+{
+  "surprised": {
+    "hero": "BAAHUBALI (Prabhas)",
+    "movie": "Baahubali: The Beginning (Tollywood)",
+    "status": "STATUS: BAAHUBALI DETECTED - SURPRISED",
+    "themeColor": "#39ff14",
+    "shadowColor": "rgba(57, 255, 20, 0.4)"
+  },
+  "happy": {
+    "hero": "CHULBUL PANDEY (Salman Khan)",
+    "movie": "Dabangg (Bollywood)",
+    "status": "STATUS: PANDEY DETECTED - HAPPY",
+    "themeColor": "#ff0cc5",
+    "shadowColor": "rgba(255, 12, 197, 0.4)"
+  },
+  "angry": {
+    "hero": "PUSHPA RAJ (Allu Arjun)",
+    "movie": "Pushpa: The Rise (Tollywood)",
+    "status": "STATUS: PUSHPA DETECTED - ANGRY",
+    "themeColor": "#ff2200",
+    "shadowColor": "rgba(255, 34, 0, 0.4)"
+  },
+  "neutral": {
+    "hero": "CHITTI 2.0 (Rajinikanth)",
+    "movie": "Enthiran / Robot (Kollywood)",
+    "status": "STATUS: CHITTI ACTIVE - NEUTRAL",
+    "themeColor": "#00fff2",
+    "shadowColor": "rgba(0, 255, 242, 0.4)"
+  }
+}
