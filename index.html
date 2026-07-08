@@ -13,21 +13,18 @@
 
   <canvas id="scene"></canvas>
 
-  <div id="scanline-overlay"></div>
-  <div id="vignette"></div>
+  <div id="scanline-overlay" class="hidden"></div>
+  <div id="vignette" class="hidden"></div>
 
-  <header id="hud-top">
+  <header id="hud-top" class="hidden">
     <div class="brand">
       <span class="brand-mark">◎</span>
       <span class="brand-name">RADIA</span>
       <span class="brand-sub">SUBDERMAL IMAGING UNIT</span>
     </div>
-    <div class="rec">
-      <span class="rec-dot"></span> LIVE FEED
-    </div>
   </header>
 
-  <div id="hud-side">
+  <div id="hud-side" class="hidden">
     <div class="stat">
       <span class="stat-label">HANDS</span>
       <span class="stat-value" id="stat-hands">0</span>
@@ -42,10 +39,10 @@
     </div>
   </div>
 
-  <div id="corner-tl" class="corner"></div>
-  <div id="corner-tr" class="corner"></div>
-  <div id="corner-bl" class="corner"></div>
-  <div id="corner-br" class="corner"></div>
+  <div id="corner-tl" class="corner hidden"></div>
+  <div id="corner-tr" class="corner hidden"></div>
+  <div id="corner-bl" class="corner hidden"></div>
+  <div id="corner-br" class="corner hidden"></div>
 
   <div id="loading">
     <div class="loading-text">CALIBRATING SENSOR ARRAY&hellip;</div>
@@ -57,7 +54,7 @@
     <p class="small">Allow camera permissions and reload the page. This must be served over HTTPS or localhost.</p>
   </div>
 
-  <footer id="hud-bottom">
+  <footer id="hud-bottom" class="hidden">
     <span>MOVE HAND OVER FRAME TO REVEAL SKELETAL STRUCTURE</span>
   </footer>
 
