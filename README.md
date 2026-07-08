@@ -1,73 +1,85 @@
-# RADIA — Real-Time AI X-Ray Hand & Face Effect
+# RADIA — Cyberpunk Celebrity Look-Alike Fingertip Scanner
 
-A browser-based "X-ray scanner" effect. It uses your webcam, tracks your hands
-and face with **MediaPipe**, and uses **Three.js/WebGL** to reveal a glowing
-X-ray-style view that follows your hand as it passes over the frame.
+A high-performance, browser-based cyberpunk camera scanner that tracks your hand and face landmarks using **MediaPipe**, rendering dynamic glitched shaders and identifying your Indian celebrity look-alike from **170 famous actors & actresses** in real-time.
 
-No installs, no build step — just static HTML/CSS/JS pulling MediaPipe and
-Three.js from a CDN at runtime.
+Built with **Three.js (WebGL)** and custom **GLSL Shaders**, it runs completely client-side at 60 FPS.
 
-## Folder contents
+---
 
+## Features
+
+1. **Dynamic Fingertip Scan Polygon**:
+   - Stretches a scanning reveal window between your index finger tips and thumb tips.
+   - The scanner activates only when a valid polygon is formed (3 or 4 fingertips visible), cleanly rendering cyberpunk effects inside the boundary.
+
+2. **Indian Celebrity Look-Alike Predictor**:
+   - Measures your real-time facial proportions using a 14-dimensional geometric proportions vector (eye spacing, nose height/width, jaw contour width, lip heights, and chin ratios).
+   - Runs a real-time Euclidean distance lookup against a pre-trained database of **170 Indian actors & actresses** (Bollywood, Tollywood, Kollywood).
+   - Displays the matched celebrity and resemblance percentage (e.g. `ALIA BHATT - SIMILARITY: 91%`) in the top-left diagnostic HUD.
+
+3. **Multi-Theme Cyberpunk Shaders**:
+   - The scanning area features animated horizontal scanlines, chromatic aberration (time-based RGB offset glitches), and a digital sci-fi grid overlay.
+   - The visual color theme shifts automatically depending on the matched celebrity:
+     - **Cyan Matrix (A-G)**: Steel blue & neon cyan.
+     - **Amber Gold (H-N)**: Royal golden-bronze & glowing amber.
+     - **Volcanic Red (O-T)**: Volcanic red, orange, and charcoal black.
+     - **Vibrant Neon (U-Z)**: Hot pink, purple, and neon violet.
+   - Scanner outlines and fingertip handles glow in sync with the active color theme.
+
+4. **Pinch-Triggered Edge Sketch**:
+   - Pinching your thumb and index finger together triggers a real-time Sobel edge-detection sketch effect, replacing the video inside the polygon with neon cyan outlines on a deep blue background (and hiding the face points).
+
+5. **Normal Background Feed**:
+   - Displays the unmodified, full-brightness camera feed outside the scanning polygon, keeping the background room completely normal.
+
+---
+
+## Folder Structure
+
+```text
+play-with-cam/
+├── index.html          # Web application shell and diagnostic HUD overlay
+├── style.css           # Premium cyberpunk HUD theme, blur backdrops, and animations
+├── app.js              # MediaPipe Hand/Face tracker + Three.js renderer & custom shaders
+├── celebrity_db.json   # Pre-trained look-alike proportions database (170 celebrities)
+├── dataset/            # Celebrity face image dataset used for training
+├── list_dataset.js     # Helper Node script to index the celebrity image folders
+├── train.html          # Browser-based training tool using GPU FaceMesh
+└── save_server.js      # Zero-dependency local server to save trained weights
 ```
-xray-hand-effect/
-├── index.html   # page shell, HUD markup, script/CDN includes
-├── style.css    # dark "medical scanner" HUD styling + scanline sweep
-├── app.js       # MediaPipe Hands/FaceMesh setup + Three.js shader & skeleton
-└── README.md
-```
 
-## How it works
+---
 
-- **Tracking**: `@mediapipe/hands` gives 21 hand landmarks per hand (up to 2
-  hands); `@mediapipe/face_mesh` gives face landmarks. Both run on every
-  webcam frame via `@mediapipe/camera_utils`.
-- **Reveal effect**: the webcam feed is drawn on a full-screen Three.js plane
-  with a custom GLSL fragment shader. Outside your hand/face, the shader shows
-  a dimmed, normal-color image. Inside a soft circular mask centered on your
-  hand (or face), it swaps in an inverted-luminance, cyan-tinted "X-ray" look,
-  with a bright glowing ring at the mask edge.
-- **Skeleton overlay**: hand joints are connected with glowing cyan line
-  segments (`THREE.LineSegments`, additive blending) so it reads like a bone
-  scan. A curated set of face contours (oval, eyes, brows, nose, lips) does
-  the same for the face, without the visual noise of the full 468-point mesh.
-- **HUD**: pure CSS — corner brackets, a scanline sweep animation, and a
-  live stats panel (hands detected / face tracked / FPS).
+## Running the Application
 
-## Running it
+Since camera access requires a secure context (HTTPS or localhost), serve the directory locally:
 
-Camera access requires **HTTPS or localhost** — opening `index.html` directly
-as a `file://` URL will not work in most browsers. Serve the folder locally:
-
-```bash
-cd xray-hand-effect
-python3 -m http.server 8080
-# then open http://localhost:8080 in your browser
-```
-
-or, with Node installed:
-
+### Using Node.js:
 ```bash
 npx serve .
 ```
 
-Grant camera permission when prompted. Move your hand into frame — a circular
-X-ray reveal should track it, with the skeletal overlay following your
-fingers. Face tracking activates automatically when a face is visible.
+### Using Python:
+```bash
+python -m http.server 3000
+```
 
-## Notes & tips
+Open `http://localhost:3000` in your web browser, grant camera permissions, and stretch your fingertips to form the scanning window over your face!
 
-- **Performance**: two MediaPipe models running per frame is demanding on
-  low-power laptops/phones. If FPS is low, try lowering `modelComplexity` for
-  Hands (in `app.js`, `hands.setOptions`) from `1` to `0`, or disable Face
-  Mesh entirely by commenting out its `faceMesh.send(...)` call.
-- **Mask size**: change `uniforms.uRadius.value` in `app.js` (default `0.22`)
-  to make the X-ray reveal circle bigger or smaller.
-- **Colors**: the X-ray tint and HUD palette are both easy to retheme — the
-  tint lives in the fragment shader (`xrayColor`), the HUD palette is defined
-  as CSS variables at the top of `style.css`.
-- **Browser support**: any recent Chrome, Edge, or Firefox with WebGL2 and
-  `getUserMedia` support. Safari works but MediaPipe's WASM backend can be
-  slower.
-- **Privacy**: everything runs locally in the browser — no video frame is
-  ever sent to a server.
+---
+
+## Training/Updating the Look-Alike Model
+
+If you add new images or celebrities to the `dataset/` directory, you can retrain the model locally in under 30 seconds:
+
+1. Run the dataset indexing script to update `dataset_list.json`:
+   ```bash
+   node list_dataset.js
+   ```
+2. Start the local database saver helper server:
+   ```bash
+   node save_server.js
+   ```
+3. Open `http://localhost:3000/train.html` in your web browser. 
+   - The browser will use local GPU-acceleration to feed the images through MediaPipe Face Mesh, extract the proportions, and automatically save the new weights to `celebrity_db.json`.
+   - The helper server will automatically log compilation completion and shut down.

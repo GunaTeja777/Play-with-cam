@@ -462,6 +462,7 @@ function updateLineSet(lineObj, points, connections, count) {
 --------------------------------------------------------------------- */
 let latestHands = []; // array of {points: [[x,y],...]}
 let latestFace = null; // {points: [[x,y],...]}
+let latestFaceRaw = null; // raw [x,y,z] from face mesh in [0,1]
 
 function centroid(points, indices) {
   let x = 0, y = 0;
@@ -510,9 +511,11 @@ faceMesh.onResults((results) => {
   const faces = results.multiFaceLandmarks;
   if (faces && faces.length > 0) {
     latestFace = faces[0].map((p) => landmarkToNDC(p.x, p.y));
+    latestFaceRaw = faces[0].map((p) => [p.x, p.y, p.z]);
     statFaceEl.textContent = 'TRACKING';
   } else {
     latestFace = null;
+    latestFaceRaw = null;
     statFaceEl.textContent = '--';
   }
 });
@@ -563,46 +566,102 @@ function processVideoFrame() {
   requestAnimationFrame(processVideoFrame);
 }
 
-let heroesDatabase = null;
-async function loadHeroesDatabase() {
-  try {
-    const res = await fetch('heroes.json');
-    heroesDatabase = await res.json();
-  } catch (err) {
-    console.error('Failed to load heroes API database, using local fallback:', err);
-    heroesDatabase = {
-      "surprised": {
-        "hero": "BAAHUBALI (Prabhas)",
-        "movie": "Baahubali: The Beginning (Tollywood)",
-        "status": "STATUS: BAAHUBALI DETECTED - SURPRISED",
-        "themeColor": "#39ff14",
-        "shadowColor": "rgba(57, 255, 20, 0.4)"
-      },
-      "happy": {
-        "hero": "CHULBUL PANDEY (Salman Khan)",
-        "movie": "Dabangg (Bollywood)",
-        "status": "STATUS: PANDEY DETECTED - HAPPY",
-        "themeColor": "#ff0cc5",
-        "shadowColor": "rgba(255, 12, 197, 0.4)"
-      },
-      "angry": {
-        "hero": "PUSHPA RAJ (Allu Arjun)",
-        "movie": "Pushpa: The Rise (Tollywood)",
-        "status": "STATUS: PUSHPA DETECTED - ANGRY",
-        "themeColor": "#ff2200",
-        "shadowColor": "rgba(255, 34, 0, 0.4)"
-      },
-      "neutral": {
-        "hero": "CHITTI 2.0 (Rajinikanth)",
-        "movie": "Enthiran / Robot (Kollywood)",
-        "status": "STATUS: CHITTI ACTIVE - NEUTRAL",
-        "themeColor": "#00fff2",
-        "shadowColor": "rgba(0, 255, 242, 0.4)"
-      }
+function extractFaceProportions(points) {
+  const forehead = points[10];
+  const chin = points[152];
+  const cheekLeft = points[234];
+  const cheekRight = points[454];
+  const eyeLeft = points[33];
+  const eyeRight = points[263];
+  const noseTop = points[168];
+  const noseBottom = points[1];
+  const nostrilLeft = points[98];
+  const nostrilRight = points[327];
+  const lipLeft = points[61];
+  const lipRight = points[291];
+  const lipTop = points[0];
+  const lipBottom = points[17];
+  const eyebrowLeft = points[105];
+  const eyebrowRight = points[295];
+  const jawLeft1 = points[58];
+  const jawRight1 = points[288];
+  const jawLeft2 = points[136];
+  const jawRight2 = points[365];
+  const jawLeft3 = points[150];
+  const jawRight3 = points[379];
+  const foreheadCenter = points[9];
+
+  function dist(p1, p2) {
+    const dx = p1[0] - p2[0];
+    const dy = p1[1] - p2[1];
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  const faceHeight = dist(forehead, chin);
+  if (faceHeight === 0) return null;
+
+  return [
+    dist(cheekLeft, cheekRight) / faceHeight, // 0: Face Width
+    dist(eyeLeft, eyeRight) / faceHeight,     // 1: Pupil Distance
+    dist(noseTop, noseBottom) / faceHeight,   // 2: Nose Length
+    dist(nostrilLeft, nostrilRight) / faceHeight, // 3: Nose Width
+    dist(lipLeft, lipRight) / faceHeight,     // 4: Mouth Width
+    dist(lipTop, lipBottom) / faceHeight,     // 5: Mouth Height
+    dist(lipBottom, chin) / faceHeight,       // 6: Chin Height
+    dist(foreheadCenter, forehead) / faceHeight, // 7: Forehead Height
+    dist(eyebrowLeft, eyeLeft) / faceHeight,   // 8: Left Eyebrow height
+    dist(eyebrowRight, eyeRight) / faceHeight, // 9: Right Eyebrow height
+    dist(jawLeft1, jawRight1) / faceHeight,   // 10: Upper Jaw Width
+    dist(jawLeft2, jawRight2) / faceHeight,   // 11: Mid Jaw Width
+    dist(jawLeft3, jawRight3) / faceHeight,   // 12: Lower Jaw Width
+    dist(noseBottom, lipTop) / faceHeight     // 13: Philtrum length
+  ];
+}
+
+function getThemeForCelebrity(name) {
+  const firstChar = name.toUpperCase().charAt(0);
+  if (firstChar >= 'A' && firstChar <= 'G') {
+    return {
+      themeId: 0.0,
+      activeColor: '#00fff2', // Cyan
+      shadowColor: 'rgba(0, 255, 242, 0.4)',
+      status: 'MATCH DETECTED: CYAN SHADER'
+    };
+  } else if (firstChar >= 'H' && firstChar <= 'N') {
+    return {
+      themeId: 1.0,
+      activeColor: '#ffbb00', // Gold
+      shadowColor: 'rgba(255, 187, 0, 0.4)',
+      status: 'MATCH DETECTED: AMBER SHADER'
+    };
+  } else if (firstChar >= 'O' && firstChar <= 'T') {
+    return {
+      themeId: 2.0,
+      activeColor: '#ff2200', // Red
+      shadowColor: 'rgba(255, 34, 0, 0.4)',
+      status: 'MATCH DETECTED: VOLCANIC SHADER'
+    };
+  } else {
+    return {
+      themeId: 3.0,
+      activeColor: '#ff0cc5', // Pink
+      shadowColor: 'rgba(255, 12, 197, 0.4)',
+      status: 'MATCH DETECTED: VIBRANT SHADER'
     };
   }
 }
-loadHeroesDatabase();
+
+let celebrityDatabase = null;
+async function loadCelebrityDatabase() {
+  try {
+    const res = await fetch('celebrity_db.json');
+    celebrityDatabase = await res.json();
+    console.log('Celebrity database successfully loaded.');
+  } catch (err) {
+    console.error('Failed to load celebrity look-alike database:', err);
+  }
+}
+loadCelebrityDatabase();
 
 async function startCamera() {
   try {
@@ -659,6 +718,7 @@ let fpsFrames = 0;
 
 let smoothedHands = [null, null];
 let smoothedFace = null;
+let smoothedFaceRaw = null;
 const LERP_FACTOR = 0.2;
 
 function animate() {
@@ -706,6 +766,21 @@ function animate() {
     }
   } else {
     smoothedFace = null;
+  }
+
+  if (latestFaceRaw) {
+    if (!smoothedFaceRaw) {
+      smoothedFaceRaw = latestFaceRaw.map(pt => [...pt]);
+    } else {
+      for (let j = 0; j < latestFaceRaw.length; j++) {
+        if (!smoothedFaceRaw[j]) smoothedFaceRaw[j] = [...latestFaceRaw[j]];
+        smoothedFaceRaw[j][0] += (latestFaceRaw[j][0] - smoothedFaceRaw[j][0]) * LERP_FACTOR;
+        smoothedFaceRaw[j][1] += (latestFaceRaw[j][1] - smoothedFaceRaw[j][1]) * LERP_FACTOR;
+        smoothedFaceRaw[j][2] += (latestFaceRaw[j][2] - smoothedFaceRaw[j][2]) * LERP_FACTOR;
+      }
+    }
+  } else {
+    smoothedFaceRaw = null;
   }
 
   // Gather active vertices (Index Tips and Thumb Tips) from both hands for the polygon
@@ -781,62 +856,54 @@ function animate() {
     facePointsObj.visible = false;
   }
 
-  // Real-time Face Expression Recognition & HUD Tag update (Bollywood, Tollywood, Kollywood)
+  // Real-time Celebrity Look-Alike & HUD Tag update
   const faceTagEl = document.getElementById('face-tag');
   let activeColor = '#00fff2'; // default cyan border
   let themeId = 0.0;
 
-  if (smoothedFace && polygonActive > 0.5 && heroesDatabase) {
-    const eyeLeft = smoothedFace[33];
-    const eyeRight = smoothedFace[263];
-    const lipLeft = smoothedFace[61];
-    const lipRight = smoothedFace[291];
-    const lipTop = smoothedFace[0];
-    const lipBottom = smoothedFace[17];
-    const eyebrowLeft = smoothedFace[55];
-    const eyebrowRight = smoothedFace[285];
+  if (smoothedFace && smoothedFaceRaw && polygonActive > 0.5 && celebrityDatabase) {
+    const userVector = extractFaceProportions(smoothedFaceRaw);
+    if (userVector) {
+      let bestMatch = null;
+      let minDistance = Infinity;
 
-    if (eyeLeft && eyeRight && lipLeft && lipRight && lipTop && lipBottom && eyebrowLeft && eyebrowRight) {
-      const eyeDist = distNDC(eyeLeft, eyeRight);
-      const mouthHeight = distNDC(lipTop, lipBottom);
-      const mouthOpenRatio = mouthHeight / eyeDist;
-
-      // Curvature: corners relative to top lip. In NDC, larger Y is higher up.
-      // A smile pulls lip corners upward.
-      const smileValue = ((lipLeft[1] + lipRight[1]) / 2) - lipTop[1];
-      const smileRatio = smileValue / eyeDist;
-
-      // Eyebrow distance for frown detection
-      const eyebrowDist = distNDC(eyebrowLeft, eyebrowRight);
-      const eyebrowRatio = eyebrowDist / eyeDist;
-
-      let exprKey = "neutral";
-      if (mouthOpenRatio > 0.18) {
-        exprKey = "surprised";
-        themeId = 1.0;
-      } else if (smileRatio > 0.05) {
-        exprKey = "happy";
-        themeId = 3.0;
-      } else if (smileRatio < -0.06 || eyebrowRatio < 0.18) {
-        exprKey = "angry";
-        themeId = 2.0;
+      for (const [name, targetVector] of Object.entries(celebrityDatabase)) {
+        let distSum = 0;
+        for (let i = 0; i < userVector.length; i++) {
+          const diff = userVector[i] - targetVector[i];
+          distSum += diff * diff;
+        }
+        const distance = Math.sqrt(distSum);
+        if (distance < minDistance) {
+          minDistance = distance;
+          bestMatch = name;
+        }
       }
 
-      // Read profile from loaded heroes database
-      const profile = heroesDatabase[exprKey];
-      activeColor = profile.themeColor;
+      if (bestMatch) {
+        // Map matched name alphabetically to theme parameters
+        const theme = getThemeForCelebrity(bestMatch);
+        themeId = theme.themeId;
+        activeColor = theme.activeColor;
 
-      // Update HTML text elements
-      document.getElementById('tag-hero').textContent = profile.hero;
-      document.getElementById('tag-movie').textContent = profile.movie;
-      document.getElementById('tag-status').textContent = profile.status;
+        // Similarity percentage math: map distance range [0.0, 0.25] to [100%, 0%]
+        const matchPercent = Math.max(0, Math.min(100, Math.round((1.0 - minDistance / 0.25) * 100)));
 
-      // Dynamic colors and shadows
-      faceTagEl.style.borderColor = profile.themeColor;
-      faceTagEl.style.boxShadow = `0 0 15px ${profile.shadowColor}`;
-      faceTagEl.style.color = profile.themeColor;
+        // Update HTML text elements
+        const nameFormatted = bestMatch.replace(/_/g, ' ').toUpperCase();
+        document.getElementById('tag-hero').textContent = nameFormatted;
+        document.getElementById('tag-movie').textContent = `SIMILARITY: ${matchPercent}%`;
+        document.getElementById('tag-status').textContent = `STATUS: ${theme.status}`;
 
-      faceTagEl.classList.remove('hidden');
+        // Dynamic colors and shadows
+        faceTagEl.style.borderColor = theme.activeColor;
+        faceTagEl.style.boxShadow = `0 0 15px ${theme.shadowColor}`;
+        faceTagEl.style.color = theme.activeColor;
+
+        faceTagEl.classList.remove('hidden');
+      } else {
+        faceTagEl.classList.add('hidden');
+      }
     } else {
       faceTagEl.classList.add('hidden');
     }
@@ -846,8 +913,25 @@ function animate() {
 
   // Update uniforms and dynamic line/handle colors to match the theme
   uniforms.uMovieTheme.value = themeId;
-  polygonLine.material.uniforms.uColor.value.set(new THREE.Color(activeColor));
-  handlePointsObj.material.color.set(new THREE.Color(activeColor));
+  try {
+    if (polygonLine && polygonLine.material && polygonLine.material.uniforms && polygonLine.material.uniforms.uColor) {
+      polygonLine.material.uniforms.uColor.value.set(new THREE.Color(activeColor));
+    } else {
+      console.warn('polygonLine material or uniforms or uColor is not fully initialized:', polygonLine);
+    }
+  } catch (e) {
+    console.error('Error setting polygonLine color:', e, polygonLine?.material?.uniforms);
+  }
+  
+  try {
+    if (handlePointsObj && handlePointsObj.material && handlePointsObj.material.color) {
+      handlePointsObj.material.color.set(new THREE.Color(activeColor));
+    } else {
+      console.warn('handlePointsObj material or color is not fully initialized:', handlePointsObj);
+    }
+  } catch (e) {
+    console.error('Error setting handlePointsObj color:', e, handlePointsObj?.material);
+  }
 
   // Set uniforms on all masked line/point materials
   for (const mat of maskedMaterials) {

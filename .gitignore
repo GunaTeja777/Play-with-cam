@@ -1,0 +1,20 @@
+# MediaPipe Dataset and training scripts
+dataset/
+dataset_list.json
+celebrity_db.json
+save_server.js
+list_dataset.js
+train.html
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS-specific files
+.DS_Store
+Thumbs.db

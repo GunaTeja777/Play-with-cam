@@ -1,0 +1,23 @@
+{
+  "name": "play-with-cam",
+  "version": "1.0.0",
+  "description": "A high-performance, browser-based cyberpunk camera scanner that tracks your hand and face landmarks using **MediaPipe**, rendering dynamic glitched shaders and identifying your Indian celebrity look-alike from **170 famous actors & actresses** in real-time.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GunaTeja777/Play-with-cam.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/GunaTeja777/Play-with-cam/issues"
+  },
+  "homepage": "https://github.com/GunaTeja777/Play-with-cam#readme",
+  "dependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}
