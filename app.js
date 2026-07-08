@@ -43,7 +43,10 @@ const uniforms = {
   uPolygonActive: { value: 0 },
 
   // Effect selector: 0.0 = X-Ray, 1.0 = Edge Sketch
-  uEffectType: { value: 0 }
+  uEffectType: { value: 0 },
+
+  // Movie theme: 0 = Chitti, 1 = Baahubali, 2 = Pushpa Raj, 3 = Chulbul Pandey
+  uMovieTheme: { value: 0.0 }
 };
 
 const vertexShader = /* glsl */ `
@@ -75,6 +78,9 @@ const fragmentShader = /* glsl */ `
 
   // Effect selector
   uniform float uEffectType;
+
+  // Movie theme
+  uniform float uMovieTheme;
 
   // Map screen UV -> video UV so the feed is cropped like CSS "cover"
   vec2 coverUV(vec2 uv) {
@@ -131,7 +137,7 @@ const fragmentShader = /* glsl */ `
     // The world outside the scan is the normal color of the camera feed
     vec3 dim = normalColor;
 
-    // Cyberpunk effect: Chromatic aberration + neon color mapping + digital scanlines
+    // Cyberpunk dynamic movie themes: Chromatic aberration + dynamic tritone color mapping
     vec2 shift = vec2(0.006 * sin(uTime * 8.0), 0.003 * cos(uTime * 12.0));
     float r = texture2D(uVideo, uv + shift).r;
     float g = texture2D(uVideo, uv).g;
@@ -140,22 +146,44 @@ const fragmentShader = /* glsl */ `
     
     float glitchLum = luminance(glitchColor);
     
-    vec3 darkColor = vec3(0.08, 0.01, 0.22); // deep purple
-    vec3 midColor = vec3(1.0, 0.05, 0.65); // hot pink
-    vec3 brightColor = vec3(0.0, 1.0, 0.95); // neon cyan
+    vec3 darkColor;
+    vec3 midColor;
+    vec3 brightColor;
     
-    vec3 cyberpunkColor = mix(darkColor, midColor, smoothstep(0.1, 0.5, glitchLum));
-    cyberpunkColor = mix(cyberpunkColor, brightColor, smoothstep(0.5, 0.9, glitchLum));
+    if (uMovieTheme < 0.5) {
+      // Chitti 2.0 (Robotic Cyan / Neutral)
+      darkColor = vec3(0.02, 0.05, 0.2);
+      midColor = vec3(0.0, 0.6, 0.85);
+      brightColor = vec3(0.0, 1.0, 0.95);
+    } else if (uMovieTheme < 1.5) {
+      // Baahubali (Golden Royal / Surprised)
+      darkColor = vec3(0.12, 0.04, 0.0);
+      midColor = vec3(0.9, 0.45, 0.0);
+      brightColor = vec3(1.0, 0.85, 0.4);
+    } else if (uMovieTheme < 2.5) {
+      // Pushpa Raj (Fiery Red / Angry)
+      darkColor = vec3(0.05, 0.0, 0.0);
+      midColor = vec3(0.95, 0.0, 0.1);
+      brightColor = vec3(1.0, 0.7, 0.0);
+    } else {
+      // Chulbul Pandey (Vibrant Pink Bollywood / Happy)
+      darkColor = vec3(0.1, 0.0, 0.15);
+      midColor = vec3(1.0, 0.0, 0.6);
+      brightColor = vec3(1.0, 0.9, 0.1);
+    }
+    
+    vec3 movieThemeColor = mix(darkColor, midColor, smoothstep(0.1, 0.5, glitchLum));
+    movieThemeColor = mix(movieThemeColor, brightColor, smoothstep(0.5, 0.9, glitchLum));
     
     // Add horizontal scrolling scanlines
     float scanline = sin(uv.y * 240.0 + uTime * 20.0) * 0.08;
-    cyberpunkColor += scanline * brightColor;
+    movieThemeColor += scanline * brightColor;
     
     // Add digital grid
     if (uPolygonActive > 0.5) {
       float gridVal = max(cos(vUv.x * 120.0), cos(vUv.y * 120.0));
       float grid = smoothstep(0.95, 0.98, gridVal);
-      cyberpunkColor += grid * brightColor * 0.25;
+      movieThemeColor += grid * brightColor * 0.25;
     }
 
     // Distance-based reveal mask inside the polygon scanning area
@@ -196,8 +224,8 @@ const fragmentShader = /* glsl */ `
         
         finalColor = mix(bg, glowCyan, edge);
       } else {
-        // Cyberpunk effect (Image 1 style)
-        finalColor = cyberpunkColor;
+        // Movie theme scan (Chitti, Baahubali, Pushpa, Chulbul)
+        finalColor = movieThemeColor;
       }
     }
 
@@ -336,6 +364,8 @@ overlayGroup.add(facePointsObj);
 
 // Fingertip polygon boundary lines
 const polygonLine = makeLineSet(5, 0x00ffcc, 0.95);
+console.log('polygonLine material:', polygonLine.material);
+console.log('polygonLine material uniforms:', polygonLine.material.uniforms);
 
 // Fingertip green square handles (Drawn on top without masking)
 const handleGeometry = new THREE.BufferGeometry();
@@ -753,6 +783,9 @@ function animate() {
 
   // Real-time Face Expression Recognition & HUD Tag update (Bollywood, Tollywood, Kollywood)
   const faceTagEl = document.getElementById('face-tag');
+  let activeColor = '#00fff2'; // default cyan border
+  let themeId = 0.0;
+
   if (smoothedFace && polygonActive > 0.5 && heroesDatabase) {
     const eyeLeft = smoothedFace[33];
     const eyeRight = smoothedFace[263];
@@ -780,14 +813,18 @@ function animate() {
       let exprKey = "neutral";
       if (mouthOpenRatio > 0.18) {
         exprKey = "surprised";
+        themeId = 1.0;
       } else if (smileRatio > 0.05) {
         exprKey = "happy";
+        themeId = 3.0;
       } else if (smileRatio < -0.06 || eyebrowRatio < 0.18) {
         exprKey = "angry";
+        themeId = 2.0;
       }
 
       // Read profile from loaded heroes database
       const profile = heroesDatabase[exprKey];
+      activeColor = profile.themeColor;
 
       // Update HTML text elements
       document.getElementById('tag-hero').textContent = profile.hero;
@@ -806,6 +843,11 @@ function animate() {
   } else {
     faceTagEl.classList.add('hidden');
   }
+
+  // Update uniforms and dynamic line/handle colors to match the theme
+  uniforms.uMovieTheme.value = themeId;
+  polygonLine.material.uniforms.uColor.value.set(new THREE.Color(activeColor));
+  handlePointsObj.material.color.set(new THREE.Color(activeColor));
 
   // Set uniforms on all masked line/point materials
   for (const mat of maskedMaterials) {
