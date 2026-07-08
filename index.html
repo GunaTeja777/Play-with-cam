@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RADIA // Live X-Ray Scanner</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Hidden source video, mirrored feed drawn via WebGL instead -->
+  <video id="video" autoplay playsinline muted></video>
+
+  <canvas id="scene"></canvas>
+
+  <div id="scanline-overlay"></div>
+  <div id="vignette"></div>
+
+  <header id="hud-top">
+    <div class="brand">
+      <span class="brand-mark">◎</span>
+      <span class="brand-name">RADIA</span>
+      <span class="brand-sub">SUBDERMAL IMAGING UNIT</span>
+    </div>
+    <div class="rec">
+      <span class="rec-dot"></span> LIVE FEED
+    </div>
+  </header>
+
+  <div id="hud-side">
+    <div class="stat">
+      <span class="stat-label">HANDS</span>
+      <span class="stat-value" id="stat-hands">0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">FACE</span>
+      <span class="stat-value" id="stat-face">--</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">FPS</span>
+      <span class="stat-value" id="stat-fps">--</span>
+    </div>
+  </div>
+
+  <div id="corner-tl" class="corner"></div>
+  <div id="corner-tr" class="corner"></div>
+  <div id="corner-bl" class="corner"></div>
+  <div id="corner-br" class="corner"></div>
+
+  <div id="loading">
+    <div class="loading-text">CALIBRATING SENSOR ARRAY&hellip;</div>
+    <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+  </div>
+
+  <div id="permission-error" class="hidden">
+    <p>Camera access is required for the scan.</p>
+    <p class="small">Allow camera permissions and reload the page. This must be served over HTTPS or localhost.</p>
+  </div>
+
+  <footer id="hud-bottom">
+    <span>MOVE HAND OVER FRAME TO REVEAL SKELETAL STRUCTURE</span>
+  </footer>
+
+  <!-- MediaPipe Hands + Face Mesh -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <!-- Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js" crossorigin="anonymous"></script>
+
+  <script src="app.js"></script>
+</body>
+</html>
