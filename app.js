@@ -35,7 +35,12 @@ const uniforms = {
   uFaceCenter: { value: new THREE.Vector2(-2, -2) },
   uFaceActive: { value: 0 },
   uRadius: { value: 0.22 },
-  uTime: { value: 0 }
+  uTime: { value: 0 },
+  
+  // Polygon uniforms
+  uPolygon: { value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()] },
+  uNumPolygonPoints: { value: 0 },
+  uPolygonActive: { value: 0 }
 };
 
 const vertexShader = /* glsl */ `
@@ -60,6 +65,11 @@ const fragmentShader = /* glsl */ `
   uniform float uRadius;
   uniform float uTime;
 
+  // Polygon uniforms
+  uniform vec2 uPolygon[4];
+  uniform float uNumPolygonPoints;
+  uniform float uPolygonActive;
+
   // Map screen UV -> video UV so the feed is cropped like CSS "cover"
   vec2 coverUV(vec2 uv) {
     float screenAspect = uResolution.x / uResolution.y;
@@ -79,6 +89,27 @@ const fragmentShader = /* glsl */ `
     return dot(c, vec3(0.299, 0.587, 0.114));
   }
 
+  // Point-in-polygon ray-casting test
+  bool isInsidePolygon(vec2 p) {
+    if (uNumPolygonPoints < 3.0) return false;
+    bool inside = false;
+    for (int i = 0; i < 4; i++) {
+      if (float(i) >= uNumPolygonPoints) break;
+      vec2 p1 = uPolygon[i];
+      vec2 p2 = uPolygon[0];
+      if (i + 1 < 4) {
+        if (float(i + 1) < uNumPolygonPoints) {
+          p2 = uPolygon[i + 1];
+        }
+      }
+      if (((p1.y > p.y) != (p2.y > p.y)) &&
+          (p.x < (p2.x - p1.x) * (p.y - p1.y) / (p2.y - p1.y) + p1.x)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
   void main() {
     vec2 uv = coverUV(vUv);
     // mirror for a natural selfie view
@@ -91,8 +122,8 @@ const fragmentShader = /* glsl */ `
 
     vec3 normalColor = texture2D(uVideo, uv).rgb;
 
-    // Slightly darken / desaturate the "visible light" world outside the scan
-    vec3 dim = mix(vec3(luminance(normalColor)), normalColor, 0.35) * 0.55;
+    // The world outside the scan is the normal color of the camera feed
+    vec3 dim = normalColor;
 
     // X-ray look: inverted luminance, cool cyan tint, boosted contrast at edges
     float lum = luminance(normalColor);
@@ -101,34 +132,50 @@ const fragmentShader = /* glsl */ `
     vec3 xrayColor = inv * vec3(0.55, 0.95, 1.05);
     xrayColor += pow(inv, 4.0) * vec3(0.4, 0.9, 1.0); // hot highlight on bone-dense (bright) areas
 
+    // Add a futuristic digital grid inside the polygon scanning area
+    if (uPolygonActive > 0.5) {
+      float gridVal = max(cos(vUv.x * 120.0), cos(vUv.y * 120.0));
+      float grid = smoothstep(0.95, 0.98, gridVal);
+      xrayColor += grid * vec3(0.0, 0.5, 0.8) * 0.22;
+    }
+
     // Distance-based reveal mask around each tracked hand + face (in aspect-corrected space)
     float mask = 0.0;
-    vec2 aspectFix = vec2(uResolution.x / uResolution.y, 1.0);
-
-    for (int i = 0; i < 2; i++) {
-      if (uHandActive[i] > 0.5) {
-        vec2 d = (uv - uHandCenters[i]) * aspectFix;
+    
+    if (uPolygonActive > 0.5) {
+      if (isInsidePolygon(vUv)) {
+        mask = 1.0;
+      }
+    } else {
+      vec2 aspectFix = vec2(uResolution.x / uResolution.y, 1.0);
+      for (int i = 0; i < 2; i++) {
+        if (uHandActive[i] > 0.5) {
+          vec2 d = (uv - uHandCenters[i]) * aspectFix;
+          float dist = length(d);
+          float edge = smoothstep(uRadius, uRadius * 0.35, dist);
+          mask = max(mask, edge);
+        }
+      }
+      if (uFaceActive > 0.5) {
+        vec2 d = (uv - uFaceCenter) * aspectFix;
         float dist = length(d);
-        float edge = smoothstep(uRadius, uRadius * 0.35, dist);
+        float edge = smoothstep(uRadius * 1.35, uRadius * 0.5, dist);
         mask = max(mask, edge);
       }
-    }
-    if (uFaceActive > 0.5) {
-      vec2 d = (uv - uFaceCenter) * aspectFix;
-      float dist = length(d);
-      float edge = smoothstep(uRadius * 1.35, uRadius * 0.5, dist);
-      mask = max(mask, edge);
     }
 
     vec3 finalColor = mix(dim, xrayColor, mask);
 
     // subtle scan ring at the mask boundary
     float ring = 0.0;
-    for (int i = 0; i < 2; i++) {
-      if (uHandActive[i] > 0.5) {
-        vec2 d = (uv - uHandCenters[i]) * aspectFix;
-        float dist = length(d);
-        ring += smoothstep(uRadius + 0.006, uRadius, dist) * (1.0 - smoothstep(uRadius - 0.01, uRadius - 0.016, dist));
+    if (uPolygonActive <= 0.5) {
+      vec2 aspectFix = vec2(uResolution.x / uResolution.y, 1.0);
+      for (int i = 0; i < 2; i++) {
+        if (uHandActive[i] > 0.5) {
+          vec2 d = (uv - uHandCenters[i]) * aspectFix;
+          float dist = length(d);
+          ring += smoothstep(uRadius + 0.006, uRadius, dist) * (1.0 - smoothstep(uRadius - 0.01, uRadius - 0.016, dist));
+        }
       }
     }
     finalColor += ring * vec3(0.6, 1.0, 1.0) * 0.9;
@@ -148,18 +195,87 @@ scene.add(plane);
 const overlayGroup = new THREE.Group();
 scene.add(overlayGroup);
 
+const maskedMaterials = [];
+
+function createMaskedMaterial(color, opacity, isPoints = false) {
+  const uniforms = {
+    uColor: { value: new THREE.Color(color) },
+    uOpacity: { value: opacity },
+    uPolygon: { value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()] },
+    uNumPolygonPoints: { value: 0 },
+    uPolygonActive: { value: 0 }
+  };
+
+  const vertexShader = `
+    varying vec2 vUv;
+    attribute vec3 color;
+    varying vec3 vColor;
+    void main() {
+      vUv = (position.xy + 1.0) / 2.0;
+      vColor = color;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const fragmentShader = `
+    uniform vec3 uColor;
+    uniform float uOpacity;
+    uniform vec2 uPolygon[4];
+    uniform float uNumPolygonPoints;
+    uniform float uPolygonActive;
+    varying vec2 vUv;
+    varying vec3 vColor;
+
+    bool isInsidePolygon(vec2 p) {
+      if (uNumPolygonPoints < 3.0) return false;
+      bool inside = false;
+      for (int i = 0; i < 4; i++) {
+        if (float(i) >= uNumPolygonPoints) break;
+        vec2 p1 = uPolygon[i];
+        vec2 p2 = uPolygon[0];
+        if (i + 1 < 4) {
+          if (float(i + 1) < uNumPolygonPoints) {
+            p2 = uPolygon[i + 1];
+          }
+        }
+        if (((p1.y > p.y) != (p2.y > p.y)) &&
+            (p.x < (p2.x - p1.x) * (p.y - p1.y) / (p2.y - p1.y) + p1.x)) {
+          inside = !inside;
+        }
+      }
+      return inside;
+    }
+
+    void main() {
+      if (uPolygonActive > 0.5 && !isInsidePolygon(vUv)) {
+        discard;
+      }
+      vec3 finalColor = ${isPoints ? 'vColor' : 'uColor'};
+      gl_FragColor = vec4(finalColor, uOpacity);
+    }
+  `;
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader,
+    fragmentShader,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  maskedMaterials.push(mat);
+  return mat;
+}
+
 function makeLineSet(maxLines, color, opacity) {
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(maxLines * 2 * 3);
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setDrawRange(0, 0);
-  const material = new THREE.LineBasicMaterial({
-    color,
-    transparent: true,
-    opacity,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
+  
+  // Use our custom masked material
+  const material = createMaskedMaterial(color, opacity, false);
+  
   const lines = new THREE.LineSegments(geometry, material);
   overlayGroup.add(lines);
   return lines;
@@ -175,6 +291,55 @@ const handCores = [
   makeLineSet(200, 0xdffbff, 0.9)
 ];
 const faceLines = makeLineSet(1200, 0x8fe9ff, 0.35);
+
+/* ---------------------------------------------------------------------
+   Additional scan overlays (digital face points, polygon boundaries, handles)
+--------------------------------------------------------------------- */
+// Face points cloud (468 points)
+const facePointsGeo = new THREE.BufferGeometry();
+const facePointsPositions = new Float32Array(468 * 3);
+facePointsGeo.setAttribute('position', new THREE.BufferAttribute(facePointsPositions, 3));
+
+// Multi-color digital vertex colors (white, cyan, magenta, blue)
+const facePointsColors = new Float32Array(468 * 3);
+for (let idx = 0; idx < 468; idx++) {
+  let r = 0.5, g = 0.9, b = 1.0;
+  const rand = Math.random();
+  if (rand < 0.2) { // white
+    r = 1.0; g = 1.0; b = 1.0;
+  } else if (rand < 0.4) { // magenta
+    r = 0.9; g = 0.4; b = 1.0;
+  } else if (rand < 0.6) { // deep blue
+    r = 0.2; g = 0.5; b = 1.0;
+  }
+  facePointsColors[idx * 3] = r;
+  facePointsColors[idx * 3 + 1] = g;
+  facePointsColors[idx * 3 + 2] = b;
+}
+facePointsGeo.setAttribute('color', new THREE.BufferAttribute(facePointsColors, 3));
+
+const facePointsMat = createMaskedMaterial(0xffffff, 0.8, true);
+const facePointsObj = new THREE.Points(facePointsGeo, facePointsMat);
+overlayGroup.add(facePointsObj);
+
+// Fingertip polygon boundary lines
+const polygonLine = makeLineSet(5, 0x00ffcc, 0.95);
+
+// Fingertip green square handles (Drawn on top without masking)
+const handleGeometry = new THREE.BufferGeometry();
+const handlePositions = new Float32Array(4 * 3); // max 4 handles
+handleGeometry.setAttribute('position', new THREE.BufferAttribute(handlePositions, 3));
+const handleMaterial = new THREE.PointsMaterial({
+  color: 0x00ffcc,
+  size: 14.0,
+  sizeAttenuation: false,
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+const handlePointsObj = new THREE.Points(handleGeometry, handleMaterial);
+scene.add(handlePointsObj);
 
 const HAND_CONNECTIONS = [
   [0,1],[1,2],[2,3],[3,4],
@@ -454,7 +619,90 @@ function animate() {
     smoothedFace = null;
   }
 
-  // Update hand mask centers (support up to 2 hands)
+  // Gather active vertices (Index Tips and Thumb Tips) from both hands for the polygon
+  const activePoints = [];
+  for (let i = 0; i < 2; i++) {
+    if (smoothedHands[i]) {
+      // 8 is Index Tip, 4 is Thumb Tip
+      if (smoothedHands[i][8]) activePoints.push(smoothedHands[i][8]);
+      if (smoothedHands[i][4]) activePoints.push(smoothedHands[i][4]);
+    }
+  }
+
+  // If we have 3 or 4 points, sort them counter-clockwise to form a simple polygon
+  if (activePoints.length >= 3) {
+    let cx = 0, cy = 0;
+    for (const pt of activePoints) {
+      cx += pt[0];
+      cy += pt[1];
+    }
+    cx /= activePoints.length;
+    cy /= activePoints.length;
+
+    activePoints.sort((a, b) => {
+      const angleA = Math.atan2(a[1] - cy, a[0] - cx);
+      const angleB = Math.atan2(b[1] - cy, b[0] - cx);
+      return angleA - angleB;
+    });
+  }
+
+  // Sync polygon tracking uniforms
+  const polygonActive = (activePoints.length >= 3) ? 1.0 : 0.0;
+  const polyPoints = [
+    new THREE.Vector2(),
+    new THREE.Vector2(),
+    new THREE.Vector2(),
+    new THREE.Vector2()
+  ];
+  for (let k = 0; k < activePoints.length && k < 4; k++) {
+    // Map NDC [-1, 1] to UV [0, 1] screen UV space
+    polyPoints[k].set((activePoints[k][0] + 1) / 2, (activePoints[k][1] + 1) / 2);
+  }
+
+  // Set uniforms on fragment shader plane material
+  uniforms.uPolygonActive.value = polygonActive;
+  uniforms.uNumPolygonPoints.value = activePoints.length;
+  for (let k = 0; k < 4; k++) {
+    uniforms.uPolygon.value[k].copy(polyPoints[k]);
+  }
+
+  // Set uniforms on all masked line/point materials
+  for (const mat of maskedMaterials) {
+    mat.uniforms.uPolygonActive.value = polygonActive;
+    mat.uniforms.uNumPolygonPoints.value = activePoints.length;
+    for (let k = 0; k < 4; k++) {
+      mat.uniforms.uPolygon.value[k].copy(polyPoints[k]);
+    }
+  }
+
+  // Update green squares/handles at vertices
+  const handlePosAttr = handleGeometry.attributes.position;
+  const handleArr = handlePosAttr.array;
+  if (polygonActive > 0.5) {
+    let hIdx = 0;
+    for (let k = 0; k < activePoints.length && k < 4; k++) {
+      handleArr[hIdx++] = activePoints[k][0];
+      handleArr[hIdx++] = activePoints[k][1];
+      handleArr[hIdx++] = 0.02; // slightly in front of lines
+    }
+    handleGeometry.setDrawRange(0, activePoints.length);
+  } else {
+    handleGeometry.setDrawRange(0, 0);
+  }
+  handlePosAttr.needsUpdate = true;
+
+  // Update polygon boundary outline lines
+  if (polygonActive > 0.5) {
+    const connections = [];
+    for (let k = 0; k < activePoints.length; k++) {
+      connections.push([k, (k + 1) % activePoints.length]);
+    }
+    updateLineSet(polygonLine, activePoints, connections, connections.length);
+  } else {
+    polygonLine.geometry.setDrawRange(0, 0);
+  }
+
+  // Update hand mask centers (support up to 2 hands for circular fallback)
   for (let i = 0; i < 2; i++) {
     if (smoothedHands[i]) {
       const c = centroid(smoothedHands[i], [0, 5, 9, 13, 17]);
@@ -465,7 +713,7 @@ function animate() {
     }
   }
 
-  // Update face mask center
+  // Update face mask center (for circular fallback)
   if (smoothedFace) {
     const c = centroid(smoothedFace, [10, 152, 234, 454]);
     uniforms.uFaceCenter.value.set((c[0] + 1) / 2, (c[1] + 1) / 2);
@@ -485,10 +733,24 @@ function animate() {
     }
   }
 
+  // Update face contour skeleton and point cloud
   if (smoothedFace) {
     updateLineSet(faceLines, smoothedFace, FACE_CONNECTIONS, FACE_CONNECTIONS.length);
+
+    // Update face digital point cloud positions
+    const pAttr = facePointsGeo.attributes.position;
+    const arr = pAttr.array;
+    let idx = 0;
+    for (let j = 0; j < smoothedFace.length; j++) {
+      arr[idx++] = smoothedFace[j][0];
+      arr[idx++] = smoothedFace[j][1];
+      arr[idx++] = 0.015; // slightly in front of lines
+    }
+    facePointsGeo.setDrawRange(0, smoothedFace.length);
+    pAttr.needsUpdate = true;
   } else {
     faceLines.geometry.setDrawRange(0, 0);
+    facePointsGeo.setDrawRange(0, 0);
   }
 
   if (uniforms.uVideoResolution.value.x !== (videoEl.videoWidth || 0) && videoEl.videoWidth) {
