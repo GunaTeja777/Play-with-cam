@@ -166,8 +166,14 @@ function makeLineSet(maxLines, color, opacity) {
 }
 
 // glow: a wider, dimmer line underneath a thin, bright line
-const handGlow = makeLineSet(200, 0x8fe9ff, 0.18);
-const handCore = makeLineSet(200, 0xdffbff, 0.9);
+const handGlows = [
+  makeLineSet(200, 0x8fe9ff, 0.18),
+  makeLineSet(200, 0x8fe9ff, 0.18)
+];
+const handCores = [
+  makeLineSet(200, 0xdffbff, 0.9),
+  makeLineSet(200, 0xdffbff, 0.9)
+];
 const faceLines = makeLineSet(1200, 0x8fe9ff, 0.35);
 
 const HAND_CONNECTIONS = [
@@ -264,8 +270,8 @@ const hands = new Hands({
 });
 hands.setOptions({
   maxNumHands: MAX_HANDS,
-  modelComplexity: 1,
-  minDetectionConfidence: 0.6,
+  modelComplexity: 0,
+  minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5
 });
 hands.onResults((results) => {
@@ -284,7 +290,7 @@ const faceMesh = new FaceMesh({
 faceMesh.setOptions({
   maxNumFaces: 1,
   refineLandmarks: false,
-  minDetectionConfidence: 0.6,
+  minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5
 });
 faceMesh.onResults((results) => {
@@ -301,7 +307,48 @@ faceMesh.onResults((results) => {
 /* ---------------------------------------------------------------------
    Camera feed
 --------------------------------------------------------------------- */
-let mpCamera = null;
+/* ---------------------------------------------------------------------
+   Offscreen canvas for downscaling input to MediaPipe
+--------------------------------------------------------------------- */
+const offscreenCanvas = document.createElement('canvas');
+const offscreenCtx = offscreenCanvas.getContext('2d');
+let isDetecting = false;
+let frameCount = 0;
+
+async function runDetections() {
+  try {
+    // Interleave detections: Hands run 2/3 of the time, FaceMesh runs 1/3.
+    // Exactly one detection model runs per frame to keep CPU load uniform.
+    if (frameCount % 3 === 2) {
+      await faceMesh.send({ image: offscreenCanvas });
+    } else {
+      await hands.send({ image: offscreenCanvas });
+    }
+    frameCount++;
+  } catch (err) {
+    console.error('Detection error:', err);
+  }
+}
+
+function processVideoFrame() {
+  if (videoEl.paused || videoEl.ended) {
+    requestAnimationFrame(processVideoFrame);
+    return;
+  }
+
+  if (!isDetecting && videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
+    isDetecting = true;
+    
+    // Draw current frame scaled down to offscreen canvas
+    offscreenCtx.drawImage(videoEl, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+    
+    runDetections().finally(() => {
+      isDetecting = false;
+    });
+  }
+
+  requestAnimationFrame(processVideoFrame);
+}
 
 async function startCamera() {
   try {
@@ -316,17 +363,18 @@ async function startCamera() {
     videoTexture.minFilter = THREE.LinearFilter;
     videoTexture.magFilter = THREE.LinearFilter;
     uniforms.uVideo.value = videoTexture;
-    uniforms.uVideoResolution.value.set(videoEl.videoWidth || 1280, videoEl.videoHeight || 720);
+    
+    const vw = videoEl.videoWidth || 1280;
+    const vh = videoEl.videoHeight || 720;
+    uniforms.uVideoResolution.value.set(vw, vh);
 
-    mpCamera = new Camera(videoEl, {
-      onFrame: async () => {
-        await hands.send({ image: videoEl });
-        await faceMesh.send({ image: videoEl });
-      },
-      width: 1280,
-      height: 720
-    });
-    mpCamera.start();
+    // Setup offscreen canvas size dynamically matching aspect ratio
+    const targetWidth = 360;
+    offscreenCanvas.width = targetWidth;
+    offscreenCanvas.height = Math.round(targetWidth * (vh / vw));
+
+    // Start background detection loop
+    requestAnimationFrame(processVideoFrame);
 
     loadingEl.classList.add('hidden');
   } catch (err) {
@@ -355,6 +403,10 @@ let lastFrameTime = performance.now();
 let fpsAccum = 0;
 let fpsFrames = 0;
 
+let smoothedHands = [null, null];
+let smoothedFace = null;
+const LERP_FACTOR = 0.2;
+
 function animate() {
   requestAnimationFrame(animate);
 
@@ -371,10 +423,41 @@ function animate() {
 
   uniforms.uTime.value = now / 1000;
 
-  // Update hand mask centers (support up to 2 hands)
+  // Apply linear interpolation (lerp) for smooth movements
   for (let i = 0; i < 2; i++) {
     if (latestHands[i]) {
-      const c = centroid(latestHands[i], [0, 5, 9, 13, 17]);
+      if (!smoothedHands[i]) {
+        smoothedHands[i] = latestHands[i].map(pt => [...pt]);
+      } else {
+        for (let j = 0; j < latestHands[i].length; j++) {
+          if (!smoothedHands[i][j]) smoothedHands[i][j] = [...latestHands[i][j]];
+          smoothedHands[i][j][0] += (latestHands[i][j][0] - smoothedHands[i][j][0]) * LERP_FACTOR;
+          smoothedHands[i][j][1] += (latestHands[i][j][1] - smoothedHands[i][j][1]) * LERP_FACTOR;
+        }
+      }
+    } else {
+      smoothedHands[i] = null;
+    }
+  }
+
+  if (latestFace) {
+    if (!smoothedFace) {
+      smoothedFace = latestFace.map(pt => [...pt]);
+    } else {
+      for (let j = 0; j < latestFace.length; j++) {
+        if (!smoothedFace[j]) smoothedFace[j] = [...latestFace[j]];
+        smoothedFace[j][0] += (latestFace[j][0] - smoothedFace[j][0]) * LERP_FACTOR;
+        smoothedFace[j][1] += (latestFace[j][1] - smoothedFace[j][1]) * LERP_FACTOR;
+      }
+    }
+  } else {
+    smoothedFace = null;
+  }
+
+  // Update hand mask centers (support up to 2 hands)
+  for (let i = 0; i < 2; i++) {
+    if (smoothedHands[i]) {
+      const c = centroid(smoothedHands[i], [0, 5, 9, 13, 17]);
       uniforms.uHandCenters.value[i].set((c[0] + 1) / 2, (c[1] + 1) / 2);
       uniforms.uHandActive.value[i] = 1;
     } else {
@@ -383,25 +466,27 @@ function animate() {
   }
 
   // Update face mask center
-  if (latestFace) {
-    const c = centroid(latestFace, [10, 152, 234, 454]);
+  if (smoothedFace) {
+    const c = centroid(smoothedFace, [10, 152, 234, 454]);
     uniforms.uFaceCenter.value.set((c[0] + 1) / 2, (c[1] + 1) / 2);
     uniforms.uFaceActive.value = 1;
   } else {
     uniforms.uFaceActive.value = 0;
   }
 
-  // Update skeleton overlays
-  if (latestHands[0]) {
-    updateLineSet(handGlow, latestHands[0], HAND_CONNECTIONS, HAND_CONNECTIONS.length);
-    updateLineSet(handCore, latestHands[0], HAND_CONNECTIONS, HAND_CONNECTIONS.length);
-  } else {
-    handGlow.geometry.setDrawRange(0, 0);
-    handCore.geometry.setDrawRange(0, 0);
+  // Update skeleton overlays for both hands
+  for (let i = 0; i < 2; i++) {
+    if (smoothedHands[i]) {
+      updateLineSet(handGlows[i], smoothedHands[i], HAND_CONNECTIONS, HAND_CONNECTIONS.length);
+      updateLineSet(handCores[i], smoothedHands[i], HAND_CONNECTIONS, HAND_CONNECTIONS.length);
+    } else {
+      handGlows[i].geometry.setDrawRange(0, 0);
+      handCores[i].geometry.setDrawRange(0, 0);
+    }
   }
 
-  if (latestFace) {
-    updateLineSet(faceLines, latestFace, FACE_CONNECTIONS, FACE_CONNECTIONS.length);
+  if (smoothedFace) {
+    updateLineSet(faceLines, smoothedFace, FACE_CONNECTIONS, FACE_CONNECTIONS.length);
   } else {
     faceLines.geometry.setDrawRange(0, 0);
   }
