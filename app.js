@@ -131,18 +131,31 @@ const fragmentShader = /* glsl */ `
     // The world outside the scan is the normal color of the camera feed
     vec3 dim = normalColor;
 
-    // X-ray look: inverted luminance, cool cyan tint, boosted contrast at edges
-    float lum = luminance(normalColor);
-    float inv = 1.0 - lum;
-    inv = pow(inv, 1.6);
-    vec3 xrayColor = inv * vec3(0.55, 0.95, 1.05);
-    xrayColor += pow(inv, 4.0) * vec3(0.4, 0.9, 1.0); // hot highlight on bone-dense (bright) areas
-
-    // Add a futuristic digital grid inside the polygon scanning area
+    // Cyberpunk effect: Chromatic aberration + neon color mapping + digital scanlines
+    vec2 shift = vec2(0.006 * sin(uTime * 8.0), 0.003 * cos(uTime * 12.0));
+    float r = texture2D(uVideo, uv + shift).r;
+    float g = texture2D(uVideo, uv).g;
+    float b = texture2D(uVideo, uv - shift).b;
+    vec3 glitchColor = vec3(r, g, b);
+    
+    float glitchLum = luminance(glitchColor);
+    
+    vec3 darkColor = vec3(0.08, 0.01, 0.22); // deep purple
+    vec3 midColor = vec3(1.0, 0.05, 0.65); // hot pink
+    vec3 brightColor = vec3(0.0, 1.0, 0.95); // neon cyan
+    
+    vec3 cyberpunkColor = mix(darkColor, midColor, smoothstep(0.1, 0.5, glitchLum));
+    cyberpunkColor = mix(cyberpunkColor, brightColor, smoothstep(0.5, 0.9, glitchLum));
+    
+    // Add horizontal scrolling scanlines
+    float scanline = sin(uv.y * 240.0 + uTime * 20.0) * 0.08;
+    cyberpunkColor += scanline * brightColor;
+    
+    // Add digital grid
     if (uPolygonActive > 0.5) {
       float gridVal = max(cos(vUv.x * 120.0), cos(vUv.y * 120.0));
       float grid = smoothstep(0.95, 0.98, gridVal);
-      xrayColor += grid * vec3(0.0, 0.5, 0.8) * 0.22;
+      cyberpunkColor += grid * brightColor * 0.25;
     }
 
     // Distance-based reveal mask inside the polygon scanning area
@@ -183,8 +196,8 @@ const fragmentShader = /* glsl */ `
         
         finalColor = mix(bg, glowCyan, edge);
       } else {
-        // Standard X-ray effect (Image 1 style)
-        finalColor = xrayColor;
+        // Cyberpunk effect (Image 1 style)
+        finalColor = cyberpunkColor;
       }
     }
 
