@@ -34,22 +34,6 @@ Built with **Three.js (WebGL)** and custom **GLSL Shaders**, it runs completely 
 
 ---
 
-## Folder Structure
-
-```text
-play-with-cam/
-├── index.html          # Web application shell and diagnostic HUD overlay
-├── style.css           # Premium cyberpunk HUD theme, blur backdrops, and animations
-├── app.js              # MediaPipe Hand/Face tracker + Three.js renderer & custom shaders
-├── celebrity_db.json   # Pre-trained look-alike proportions database (170 celebrities)
-├── dataset/            # Celebrity face image dataset used for training
-├── list_dataset.js     # Helper Node script to index the celebrity image folders
-├── train.html          # Browser-based training tool using GPU FaceMesh
-└── save_server.js      # Zero-dependency local server to save trained weights
-```
-
----
-
 ## Running the Application
 
 Since camera access requires a secure context (HTTPS or localhost), serve the directory locally:
