@@ -2,11 +2,7 @@
 
 A high-performance, browser-based cyberpunk camera scanner that tracks your hand and face landmarks using **MediaPipe**, rendering dynamic glitched shaders and identifying your Indian celebrity look-alike from **170 famous actors & actresses** in real-time.
 
-<<<<<<< Updated upstream
 Built with **Three.js (WebGL)** and custom **GLSL Shaders**, it runs completely client-side at 60 FPS.
-=======
-Built with **Three.js (WebGL)** and custom **GLSL Shaders**, it runs completely client-side at  60FPS
->>>>>>> Stashed changes
 
 ---
 
