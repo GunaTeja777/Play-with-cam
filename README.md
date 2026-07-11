@@ -14,7 +14,7 @@ Built with **Three.js (WebGL)** and custom **GLSL Shaders**, it runs completely 
 
 2. **Indian Celebrity Look-Alike Predictor**:
    - Measures your real-time facial proportions using a 14-dimensional geometric proportions vector (eye spacing, nose height/width, jaw contour width, lip heights, and chin ratios).
-   - Runs a real-time Euclidean distance lookup against a pre-trained database of **170 Indian actors & actresses** (Bollywood, Tollywood, Kollywood).
+   - Runs a real-time Euclidean distance lookup against a pre-trained database of **170 Indian actors & actresses**.
    - Displays the matched celebrity and resemblance percentage (e.g. `ALIA BHATT - SIMILARITY: 91%`) in the top-left diagnostic HUD.
 
 3. **Multi-Theme Cyberpunk Shaders**:
